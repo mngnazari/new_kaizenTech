@@ -4,14 +4,15 @@ from telegram.ext import ContextTypes, CommandHandler, MessageHandler, filters, 
 # ایمپورت STAFFS و ADMIN از فایل config
 from config import STAFFS, ADMIN
 
-# ایمپورت‌های دیتابیس (مسیرهای جدید)
-from db.db import SessionLocal  # تغییر اینجا
-from db.crud import get_user_by_telegram_id, create_task, get_staff_members_of_admin, create_user # تغییر اینجا و اضافه کردن create_user
+# ایمپورت‌های دیتابیس
+from db.db import SessionLocal
+from db.crud import get_user_by_telegram_id, create_task, get_staff_members_of_admin, create_user, get_tasks_by_staff_id
 
 # Stateهای برای ConversationHandler
 TITLE, TIME, PRIORITY, EXPECTED_RESULTS = range(4)
 
 
+# توابع placeholder برای admin_command و cube_admin
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("شما وارد بخش مدیریت شدید!")
 
@@ -19,45 +20,58 @@ async def cube_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("منوی کیوب ادمین در حال آماده‌سازی است...")
 
 
+# تابع برای نمایش کیبورد عملیات نیرو (با دکمه اضافه کردن کار جدید و کارهای موجود)
+# admin_handler.py
+
+# ... (بقیه کدها دست نخورده)
+
+# تابع برای نمایش کیبورد عملیات نیرو (با دکمه اضافه کردن کار جدید و کارهای موجود)
 async def show_staff_operations_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE, staff_telegram_id: int):
     db = SessionLocal()
     try:
         staff_db = get_user_by_telegram_id(db, staff_telegram_id)
         if not staff_db or staff_db.role != "staff":
-            # استفاده از effective_message برای اطمینان از ویرایش پیام درست
             if update.callback_query:
                 await update.callback_query.edit_message_text("⚠️ نیرو انتخاب شده نامعتبر است.")
             else:
                 await update.message.reply_text("⚠️ نیرو انتخاب شده نامعتبر است.")
             return
 
-        staff_operations_keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("➕ اضافه کردن کار جدید", callback_data=f"add_new_task_{staff_telegram_id}")],
-            [InlineKeyboardButton("بازگشت به لیست نیروها", callback_data="back_to_staff_list")]
-        ])
+        keyboard_buttons = []
 
-        response = (
-            f"👤 نیرو: {staff_db.name}\n"
-            f"🆔 آیدی: `{staff_db.telegram_id}`\n\n"
-            "لطفا عملیات مورد نظر را انتخاب کنید:"
+        tasks_for_staff = get_tasks_by_staff_id(db, staff_db.id)
+        if tasks_for_staff:
+            for task in tasks_for_staff:
+                keyboard_buttons.append([InlineKeyboardButton(f"📄 {task.title}", callback_data=f"view_task_{task.id}")])
+
+        keyboard_buttons.append(
+            [InlineKeyboardButton("➕ اضافه کردن کار جدید", callback_data=f"add_new_task_{staff_telegram_id}")]
         )
+
+        keyboard_buttons.append(
+            [InlineKeyboardButton("بازگشت به لیست نیروها", callback_data="back_to_staff_list")]
+        )
+
+        staff_operations_keyboard = InlineKeyboardMarkup(keyboard_buttons)
 
         if update.callback_query:
             await update.callback_query.edit_message_text(
-                response,
+                ".", # <--- تغییر اینجا: استفاده از یک نقطه به جای فضای خالی
                 reply_markup=staff_operations_keyboard,
                 parse_mode="Markdown"
             )
         else:
             await update.message.reply_text(
-                response,
+                ".", # <--- تغییر اینجا: استفاده از یک نقطه به جای فضای خالی
                 reply_markup=staff_operations_keyboard,
                 parse_mode="Markdown"
             )
     finally:
         db.close()
 
+# ... (بقیه کدها دست نخورده)
 
+# تابع برای مدیریت انتخاب نیرو از کیبورد شیشه‌ای
 async def select_staff_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -80,6 +94,7 @@ async def select_staff_callback(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=ReplyKeyboardRemove()
         )
     elif callback_data == "back_to_staff_list":
+        # بازگشت به لیست نیروها
         from utils import create_staff_keyboard
         db = SessionLocal()
         try:
@@ -103,11 +118,25 @@ async def select_staff_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
         finally:
             db.close()
+    elif callback_data.startswith("view_task_"):
+        task_id_str = callback_data.replace("view_task_", "")
+        try:
+            task_id = int(task_id_str)
+            # در اینجا می‌توانید جزئیات کار را از دیتابیس بگیرید و نمایش دهید.
+            # فعلاً فقط یک پیام موقت:
+            await query.edit_message_text(f"شما کار با آیدی {task_id} را انتخاب کردید. (جزئیات کار نمایش داده می‌شود)")
+            # نکته: اگر میخواهید پس از نمایش جزئیات کار، دوباره کیبورد عملیات نیرو نمایش داده شود:
+            # selected_staff_telegram_id = context.user_data.get('selected_staff_telegram_id')
+            # if selected_staff_telegram_id:
+            #     await show_staff_operations_keyboard(update, context, selected_staff_telegram_id)
+        except ValueError:
+            await query.edit_message_text("⚠️ خطایی در شناسایی آیدی کار رخ داد.")
 
 
+# توابع برای ConversationHandler اضافه کردن کار جدید
 async def start_add_new_task(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await query.answer() # مهم: برای جلوگیری از نمایش لودینگ روی دکمه
 
     if 'selected_staff_telegram_id' not in context.user_data:
         await query.edit_message_text("خطا: نیرویی انتخاب نشده است. لطفا دوباره شروع کنید.")
@@ -118,8 +147,9 @@ async def start_add_new_task(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         staff = get_user_by_telegram_id(db, selected_staff_telegram_id)
         if staff and staff.role == "staff":
-            await query.edit_message_text(f"شما در حال اضافه کردن کار برای نیرو {staff.name} هستید.")
-            await query.message.reply_text("لطفا عنوان کار را وارد کنید:")
+            # ویرایش پیام قبلی با یک پیام جدید برای شروع محاوره
+            await query.edit_message_text(f"شما در حال اضافه کردن کار برای نیرو *{staff.name}* هستید.\n\nلطفا عنوان کار را وارد کنید:", parse_mode="Markdown")
+            # نیازی به reply_text جدید نیست، چون edit_message_text را انجام دادیم.
             return TITLE
         else:
             await query.edit_message_text("خطا: نیروی انتخاب شده نامعتبر است.")
@@ -170,6 +200,8 @@ async def get_expected_results(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"نتایج مورد انتظار: {new_task.expected_results}\n\n"
             )
             await update.message.reply_text(summary)
+            # پس از ثبت کار، مجدداً کیبورد عملیات نیرو را نمایش دهید تا کار جدید دیده شود
+            await show_staff_operations_keyboard(update, context, selected_staff_telegram_id)
         else:
             await update.message.reply_text("⚠️ خطایی در ذخیره کار رخ داد: نیروی مربوطه یافت نشد.")
 
@@ -205,6 +237,7 @@ add_task_conversation_handler = ConversationHandler(
 ADMIN_HANDLERS = [
     CommandHandler("admin", admin_command),
     MessageHandler(filters.Regex(r"^کیوبدرادمین$"), cube_admin),
-    CallbackQueryHandler(select_staff_callback, pattern=r"^(select_staff_\d+|manage_staffs|back_to_staff_list)$"),
-    add_task_conversation_handler,
+    add_task_conversation_handler, # <--- انتقال این هندلر به بالای لیست
+    # الگوی CallbackQueryHandler برای select_staff_callback باید add_new_task_\d+ را شامل نشود
+    CallbackQueryHandler(select_staff_callback, pattern=r"^(select_staff_\d+|manage_staffs|back_to_staff_list|view_task_\d+|ignore)$"),
 ]

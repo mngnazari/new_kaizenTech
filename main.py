@@ -91,7 +91,7 @@ def main() -> None:
         logger.critical(f"Application failed: {e}", exc_info=True)
         sys.exit(1)
 
-
+print("اتان")
 if __name__ == "__main__":
     logger.info("Bot is starting...")
     main()

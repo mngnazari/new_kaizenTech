@@ -21,14 +21,10 @@ async def cube_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # تابع برای نمایش کیبورد عملیات نیرو (با دکمه اضافه کردن کار جدید و کارهای موجود)
-# admin_handler.py
-
-# ... (بقیه کدها دست نخورده)
-
-# تابع برای نمایش کیبورد عملیات نیرو (با دکمه اضافه کردن کار جدید و کارهای موجود)
 async def show_staff_operations_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE, staff_telegram_id: int):
     db = SessionLocal()
     try:
+        # پیدا کردن شیء Staff از دیتابیس با telegram_id
         staff_db = get_user_by_telegram_id(db, staff_telegram_id)
         if not staff_db or staff_db.role != "staff":
             if update.callback_query:
@@ -37,39 +33,50 @@ async def show_staff_operations_keyboard(update: Update, context: ContextTypes.D
                 await update.message.reply_text("⚠️ نیرو انتخاب شده نامعتبر است.")
             return
 
+        # لیست برای نگهداری دکمه‌های شیشه‌ای
         keyboard_buttons = []
 
+        # 1. اضافه کردن دکمه‌های کارهای موجود (فقط اگر کاری وجود داشته باشد)
         tasks_for_staff = get_tasks_by_staff_id(db, staff_db.id)
         if tasks_for_staff:
             for task in tasks_for_staff:
+                # هر کار به عنوان یک دکمه جداگانه
                 keyboard_buttons.append([InlineKeyboardButton(f"📄 {task.title}", callback_data=f"view_task_{task.id}")])
+        # else:
+            # اگر کاری تعریف نشده، هیچ دکمه‌ای برای "کاری تعریف نشده" اضافه نمی‌کنیم.
 
+        # 2. اضافه کردن دکمه "اضافه کردن کار جدید"
         keyboard_buttons.append(
             [InlineKeyboardButton("➕ اضافه کردن کار جدید", callback_data=f"add_new_task_{staff_telegram_id}")]
         )
 
+        # 3. اضافه کردن دکمه "بازگشت به لیست نیروها"
         keyboard_buttons.append(
             [InlineKeyboardButton("بازگشت به لیست نیروها", callback_data="back_to_staff_list")]
         )
 
+        # ساخت InlineKeyboardMarkup
         staff_operations_keyboard = InlineKeyboardMarkup(keyboard_buttons)
 
+        # تغییر: حذف متن توضیحی و فقط ارسال کیبورد
+        # برای edit_message_text یک فضای خالی " " ارسال می‌کنیم تا خالی از متن نباشد و کار کند.
         if update.callback_query:
+            # اگر پیام قبلی از طریق یک دکمه CallbackQuery فرستاده شده، آن را ویرایش می‌کنیم.
             await update.callback_query.edit_message_text(
-                ".", # <--- تغییر اینجا: استفاده از یک نقطه به جای فضای خالی
+                ".", # یک نقطه برای متن
                 reply_markup=staff_operations_keyboard,
                 parse_mode="Markdown"
             )
         else:
+            # اگر پیام قبلی از طریق CommandHandler یا MessageHandler بوده، یک پیام جدید می‌فرستیم.
             await update.message.reply_text(
-                ".", # <--- تغییر اینجا: استفاده از یک نقطه به جای فضای خالی
+                ".", # یک نقطه برای متن
                 reply_markup=staff_operations_keyboard,
                 parse_mode="Markdown"
             )
     finally:
         db.close()
 
-# ... (بقیه کدها دست نخورده)
 
 # تابع برای مدیریت انتخاب نیرو از کیبورد شیشه‌ای
 async def select_staff_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -236,8 +243,8 @@ add_task_conversation_handler = ConversationHandler(
 
 ADMIN_HANDLERS = [
     CommandHandler("admin", admin_command),
-    MessageHandler(filters.Regex(r"^کیوبدرادمین$"), cube_admin),
-    add_task_conversation_handler, # <--- انتقال این هندلر به بالای لیست
-    # الگوی CallbackQueryHandler برای select_staff_callback باید add_new_task_\d+ را شامل نشود
+    MessageHandler(filters.Regex(r"^کیوبرد در ادمین$"), cube_admin), # فرض می شود این دکمه ای است که ادمین میزند
+    add_task_conversation_handler, # <--- این هندلر باید قبل از CallbackQueryHandler عمومی باشد
+    # CallbackQueryHandler برای select_staff_callback باید add_new_task_\d+ را شامل نشود
     CallbackQueryHandler(select_staff_callback, pattern=r"^(select_staff_\d+|manage_staffs|back_to_staff_list|view_task_\d+|ignore)$"),
 ]
